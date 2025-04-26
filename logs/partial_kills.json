@@ -1,0 +1,74 @@
+[
+  {
+    "group_id": 1215,
+    "tick": 98543,
+    "killer_name": "dev1ce",
+    "victim_name": "Spinx",
+    "weapon_name": "AWP",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1216,
+    "tick": 101169,
+    "killer_name": "dev1ce",
+    "victim_name": "flameZ",
+    "weapon_name": "AWP",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1217,
+    "tick": 101344,
+    "killer_name": "dev1ce",
+    "victim_name": "ZywOo",
+    "weapon_name": "AWP",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1218,
+    "tick": 101470,
+    "killer_name": "stavn",
+    "victim_name": "mezii",
+    "weapon_name": "M4A1",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1219,
+    "tick": 103232,
+    "killer_name": "Spinx",
+    "victim_name": "Staehr",
+    "weapon_name": "AK-47",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1220,
+    "tick": 110575,
+    "killer_name": "dev1ce",
+    "victim_name": "flameZ",
+    "weapon_name": "AWP",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1221,
+    "tick": 110729,
+    "killer_name": "ZywOo",
+    "victim_name": "dev1ce",
+    "weapon_name": "Desert Eagle",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1222,
+    "tick": 145190,
+    "killer_name": "dev1ce",
+    "victim_name": "ZywOo",
+    "weapon_name": "USP-S",
+    "demo_id": 225
+  },
+  {
+    "group_id": 1223,
+    "tick": 150492,
+    "killer_name": "Staehr",
+    "victim_name": "Spinx",
+    "weapon_name": "MAC-10",
+    "demo_id": 225
+  }
+]

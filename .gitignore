@@ -1,0 +1,20 @@
+# 不要推這些大型資料夾
+output/
+checkpoints/
+DEM/
+REPLY/
+*.dem
+*.pt
+*.pkl
+*.csv
+
+# Python 自動產生的東西
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 虛擬環境
+env/
+venv/
+ENV/
