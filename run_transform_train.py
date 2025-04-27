@@ -27,7 +27,7 @@ untrained_files = [f for f in all_transfer_files if f.replace("\\", "/") not in 
 
 # ========== 參數解析 ==========
 parser = argparse.ArgumentParser()
-parser.add_argument("--max-files", type=int, default=197, help="最多訓練幾個 transfer 檔")
+parser.add_argument("--max-files", type=int, default=300, help="最多訓練幾個 transfer 檔")
 parser.add_argument("--dry-run", action="store_true", help="只列出將訓練的檔案，不執行 transform.py")
 args = parser.parse_args()
 
