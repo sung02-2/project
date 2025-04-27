@@ -2,35 +2,37 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-import re
-import json
+import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from datetime import datetime
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, precision_score, recall_score, f1_score, accuracy_score
+from sklearn.metrics import classification_report
 
-# ========== 模型參數 ========== 
+# ========== 全域隨機種子設定（確保每次結果一致） ========== 
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+
+# ========== 超參數 ========== 
 input_dim = 5
 hidden_dim = 128
 num_heads = 4
 num_layers = 2
 output_dim = 1
 seq_length = 64
-learning_rate = 1e-4  # ✅ 學習率設定
-num_epochs = 250        # ✅ 訓練輪數設定（Epoch）
+learning_rate = 1e-4
+num_epochs = 300
+batch_size = 32
+patience = 10
 
-# ========== 準備資料夾與訓練記錄檔 ========== 
+# ========== 準備資料夾 ========== 
 trainlog_dir = "trainlog"
+checkpoint_dir = "checkpoints"
 os.makedirs(trainlog_dir, exist_ok=True)
-
-trained_log = os.path.join(trainlog_dir, "trained_files.txt")
-if not os.path.exists(trained_log):
-    open(trained_log, "w").close()
-
-with open(trained_log, "r") as f:
-    trained_files = set(line.strip() for line in f.readlines())
+os.makedirs(checkpoint_dir, exist_ok=True)
 
 # ========== Attention Pooling 定義 ========== 
 class AttentionPooling(nn.Module):
@@ -62,66 +64,76 @@ class TransformerModel(nn.Module):
         x = x.permute(1, 0, 2)
         return self.fc_out(self.pooling(x))
 
-# ========== 收集檔案與過濾已訓練檔案 ========== 
-target_players = os.getenv("TARGET_PLAYER", "dev1ce,device").split(",")
-target_players = [name.strip().lower() for name in target_players]
+# ========== 資料載入 function ==========
+def load_data(file_list):
+    X_all, y_all = [], []
+    for file in file_list:
+        df = pd.read_csv(file)
+        label_path = file.replace("transfer", "labels").replace("output/transfer", "output/labels").replace("\\", "/")
+        if not os.path.exists(label_path):
+            continue
+        label_df = pd.read_csv(label_path)
+        label_map = {(row["DemoID"], row["GroupID"]): row["player?"] for _, row in label_df.iterrows()}
+        for group_id, group in df.groupby("GroupID"):
+            if len(group) != seq_length:
+                continue
+            features = group[["ViewX", "ViewY", "Total_Angular_Velocity", "Angular_Acceleration", "Fired"]].values
+            demoid = group["DemoID"].iloc[0] if "DemoID" in group.columns else None
+            label = label_map.get((demoid, group_id))
+            if label is not None:
+                X_all.append(features)
+                y_all.append(label)
+    return torch.tensor(np.array(X_all), dtype=torch.float32), torch.tensor(np.array(y_all), dtype=torch.float32).view(-1, 1)
 
+# ========== 讀取 transfer 檔案 ==========
 all_transfer_files = sorted(glob.glob("output/transfer/transfer*.csv"))
-selected_file_list = os.path.join(trainlog_dir, "selected_for_training.txt")
-if os.path.exists(selected_file_list):
-    with open(selected_file_list, "r") as f:
-        all_files = [line.strip() for line in f.readlines()]
-    os.remove(selected_file_list)
-else:
-    all_files = [f for f in all_transfer_files if f.replace("\\", "/") not in trained_files]
-
-if not all_files:
+if not all_transfer_files:
     print("✅ 沒有新的 transferN.csv 檔案需要訓練。")
     exit()
 
-# ========== 將檔案分為訓練與測試 ========== 
-train_files, test_files = train_test_split(all_files, test_size=0.2, random_state=42)
+# ========== 三分資料 train/val/test ==========
+train_files, temp_files = train_test_split(all_transfer_files, test_size=0.3, random_state=SEED)
+val_files, test_files = train_test_split(temp_files, test_size=0.5, random_state=SEED)
 
-# ========== 讀取訓練資料並轉成 tensor ========== 
-X_all, y_all = [], []
-for file in train_files:
-    df = pd.read_csv(file)
-    label_path = file.replace("transfer", "labels").replace("output/transfer", "output/labels").replace("\\", "/")
-    if not os.path.exists(label_path):
-        continue
-    label_df = pd.read_csv(label_path)
-    label_map = {(row["DemoID"], row["GroupID"]): row["player?"] for _, row in label_df.iterrows()}
-    for group_id, group in df.groupby("GroupID"):
-        if len(group) != seq_length:
-            continue
-        features = group[["ViewX", "ViewY", "Total_Angular_Velocity", "Angular_Acceleration", "Fired"]].values
-        demoid = group["DemoID"].iloc[0] if "DemoID" in group.columns else None
-        label = label_map.get((demoid, group_id))
-        if label is not None:
-            X_all.append(features)
-            y_all.append(label)
+X_train_tensor, y_train_tensor = load_data(train_files)
+X_val_tensor, y_val_tensor = load_data(val_files)
+X_test_tensor, y_test_tensor = load_data(test_files)
 
-if not X_all:
-    print("⚠️ 沒有足夠資料訓練")
-    exit()
+train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor), batch_size=batch_size, shuffle=True)
 
-X = np.array(X_all)
-y = np.array(y_all)
+print(f"🚀 訓練資料量：{len(X_train_tensor)}")
+print(f"🧪 驗證資料量：{len(X_val_tensor)}")
+print(f"🎯 測試資料量：{len(X_test_tensor)}")
 
-X_train_tensor = torch.tensor(X, dtype=torch.float32)
-y_train_tensor = torch.tensor(y, dtype=torch.float32).view(-1, 1)
-train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor), batch_size=32, shuffle=True)
-
-# ========== 模型初始化與訓練 ========== 
+# ========== 初始化模型 ==========
 model = TransformerModel(input_dim, output_dim, num_heads, num_layers, hidden_dim)
 criterion = nn.BCEWithLogitsLoss()
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-checkpoint_dir = "checkpoints"
-os.makedirs(checkpoint_dir, exist_ok=True)
+# ========== 檢查是否有 checkpoint ==========
+start_epoch = 0
+best_val_loss = float('inf')
+best_model_path = os.path.join(checkpoint_dir, "best_model.pt")
 
-print("🚀 訓練資料量：", len(X_all))
-for epoch in range(num_epochs):
+if os.path.exists(best_model_path):
+    print(f"🔄 載入 best_model.pt 接續訓練...")
+    checkpoint = torch.load(best_model_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    start_epoch = checkpoint['epoch']
+    best_val_loss = checkpoint['val_loss']
+    print(f"✅ 從第 {start_epoch} 個 epoch 繼續")
+
+# ========== 初始化即時繪圖 ==========
+plt.ion()
+fig, ax = plt.subplots()
+train_losses = []
+val_losses = []
+epochs_record = []
+epochs_no_improve = 0
+
+# ========== 訓練 ==========
+for epoch in range(start_epoch, num_epochs):
     model.train()
     total_loss = 0
     for inputs, labels in train_loader:
@@ -131,46 +143,73 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-    avg_loss = total_loss / len(train_loader)
-    print(f"Epoch {epoch+1}, Loss: {avg_loss:.4f}")
 
-    # 每 10 次儲存一次模型檔案
+    avg_train_loss = total_loss / len(train_loader)
+
+    model.eval()
+    with torch.no_grad():
+        val_outputs = model(X_val_tensor)
+        val_loss = criterion(val_outputs, y_val_tensor).item()
+
+    # 更新損失紀錄
+    train_losses.append(avg_train_loss)
+    val_losses.append(val_loss)
+    epochs_record.append(epoch + 1)
+
+    print(f"Epoch {epoch+1}, Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}")
+
+    # 即時繪圖更新
+    ax.clear()
+    ax.plot(epochs_record, train_losses, label='Train Loss')
+    ax.plot(epochs_record, val_losses, label='Val Loss')
+    ax.legend()
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title("Training Progress")
+    plt.pause(0.01)
+
+    # 每 10 epoch 存一版 checkpoint
     if (epoch + 1) % 10 == 0:
         checkpoint_path = os.path.join(checkpoint_dir, f"epoch_{epoch+1}.pt")
         torch.save({
             'epoch': epoch + 1,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'loss': avg_loss
+            'train_loss': avg_train_loss,
+            'val_loss': val_loss
         }, checkpoint_path)
         print(f"💾 已儲存模型至 {checkpoint_path}")
 
-# ========== 讀取測試資料並評估模型 ========== 
-X_test_all, y_test_all = [], []
-for file in test_files:
-    df = pd.read_csv(file)
-    label_path = file.replace("transfer", "labels").replace("output/transfer", "output/labels").replace("\\", "/")
-    if not os.path.exists(label_path):
-        continue
-    label_df = pd.read_csv(label_path)
-    label_map = {(row["DemoID"], row["GroupID"]): row["player?"] for _, row in label_df.iterrows()}
-    for group_id, group in df.groupby("GroupID"):
-        if len(group) != seq_length:
-            continue
-        features = group[["ViewX", "ViewY", "Total_Angular_Velocity", "Angular_Acceleration", "Fired"]].values
-        demoid = group["DemoID"].iloc[0] if "DemoID" in group.columns else None
-        label = label_map.get((demoid, group_id))
-        if label is not None:
-            X_test_all.append(features)
-            y_test_all.append(label)
+    # 如果 val loss 有進步，更新 best model
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': avg_train_loss,
+            'val_loss': val_loss
+        }, best_model_path)
+        print(f"🌟 新最佳模型！已儲存至 {best_model_path}")
+        epochs_no_improve = 0
+    else:
+        epochs_no_improve += 1
 
-X_test_tensor = torch.tensor(np.array(X_test_all), dtype=torch.float32)
-y_test_tensor = torch.tensor(np.array(y_test_all), dtype=torch.float32).view(-1, 1)
+    # early stopping 判斷
+    if epochs_no_improve >= patience:
+        print(f"⚡ Early stopping at epoch {epoch+1}！")
+        break
 
+# ========== 測試 ==========
+print("\n🧪 測試 best model on test set...")
+model.load_state_dict(torch.load(best_model_path)['model_state_dict'])
 model.eval()
 with torch.no_grad():
     outputs = model(X_test_tensor)
     predicted = (torch.sigmoid(outputs) > 0.5).float()
 
-print("📊 測試結果")
+print("📊 最終測試結果")
 print(classification_report(y_test_tensor, predicted, zero_division=0))
+
+plt.ioff()
+plt.show()
