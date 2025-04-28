@@ -1,50 +1,154 @@
 [
   {
-    "group_id": 635,
-    "tick": 422465,
+    "group_id": 927,
+    "tick": 171174,
     "killer_name": "device",
-    "victim_name": "chopper",
-    "weapon_name": "AWP",
-    "demo_id": 356
+    "victim_name": "Ethan",
+    "weapon_name": "SG 553",
+    "demo_id": 870
   },
   {
-    "group_id": 636,
-    "tick": 431008,
+    "group_id": 928,
+    "tick": 208271,
     "killer_name": "device",
-    "victim_name": "magixx",
-    "weapon_name": "M4A1",
-    "demo_id": 356
+    "victim_name": "Brehze",
+    "weapon_name": "SG 553",
+    "demo_id": 870
   },
   {
-    "group_id": 637,
-    "tick": 433646,
-    "killer_name": "chopper",
-    "victim_name": "device",
-    "weapon_name": "M4A1",
-    "demo_id": 356
-  },
-  {
-    "group_id": 638,
-    "tick": 452899,
-    "killer_name": "device",
-    "victim_name": "s1ren",
+    "group_id": 929,
+    "tick": 227843,
+    "killer_name": "gla1ve",
+    "victim_name": "Brehze",
     "weapon_name": "AK-47",
-    "demo_id": 356
+    "demo_id": 870
   },
   {
-    "group_id": 639,
-    "tick": 454136,
-    "killer_name": "magixx",
-    "victim_name": "device",
-    "weapon_name": "AK-47",
-    "demo_id": 356
-  },
-  {
-    "group_id": 640,
-    "tick": 497288,
+    "group_id": 930,
+    "tick": 284994,
     "killer_name": "device",
-    "victim_name": "Patsi",
+    "victim_name": "CeRq",
+    "weapon_name": "USP-S",
+    "demo_id": 870
+  },
+  {
+    "group_id": 931,
+    "tick": 285009,
+    "killer_name": "Brehze",
+    "victim_name": "device",
+    "weapon_name": "P250",
+    "demo_id": 870
+  },
+  {
+    "group_id": 932,
+    "tick": 315248,
+    "killer_name": "device",
+    "victim_name": "CeRq",
+    "weapon_name": "M4A4",
+    "demo_id": 870
+  },
+  {
+    "group_id": 933,
+    "tick": 315976,
+    "killer_name": "device",
+    "victim_name": "stanislaw",
+    "weapon_name": "M4A4",
+    "demo_id": 870
+  },
+  {
+    "group_id": 934,
+    "tick": 316134,
+    "killer_name": "device",
+    "victim_name": "tarik",
+    "weapon_name": "M4A4",
+    "demo_id": 870
+  },
+  {
+    "group_id": 935,
+    "tick": 316150,
+    "killer_name": "Brehze",
+    "victim_name": "device",
+    "weapon_name": "Galil AR",
+    "demo_id": 870
+  },
+  {
+    "group_id": 936,
+    "tick": 320513,
+    "killer_name": "Xyp9x",
+    "victim_name": "Brehze",
+    "weapon_name": "AK-47",
+    "demo_id": 870
+  },
+  {
+    "group_id": 937,
+    "tick": 321966,
+    "killer_name": "Xyp9x",
+    "victim_name": "Ethan",
+    "weapon_name": "AK-47",
+    "demo_id": 870
+  },
+  {
+    "group_id": 938,
+    "tick": 345538,
+    "killer_name": "device",
+    "victim_name": "Ethan",
     "weapon_name": "AWP",
-    "demo_id": 356
+    "demo_id": 870
+  },
+  {
+    "group_id": 939,
+    "tick": 345880,
+    "killer_name": "CeRq",
+    "victim_name": "device",
+    "weapon_name": "SG 553",
+    "demo_id": 870
+  },
+  {
+    "group_id": 940,
+    "tick": 385202,
+    "killer_name": "device",
+    "victim_name": "Ethan",
+    "weapon_name": "Desert Eagle",
+    "demo_id": 870
+  },
+  {
+    "group_id": 941,
+    "tick": 386108,
+    "killer_name": "Brehze",
+    "victim_name": "device",
+    "weapon_name": "UMP-45",
+    "demo_id": 870
+  },
+  {
+    "group_id": 942,
+    "tick": 391627,
+    "killer_name": "device",
+    "victim_name": "Brehze",
+    "weapon_name": "USP-S",
+    "demo_id": 870
+  },
+  {
+    "group_id": 943,
+    "tick": 391915,
+    "killer_name": "Ethan",
+    "victim_name": "Magisk",
+    "weapon_name": "MAC-10",
+    "demo_id": 870
+  },
+  {
+    "group_id": 944,
+    "tick": 410505,
+    "killer_name": "device",
+    "victim_name": "Ethan",
+    "weapon_name": "AWP",
+    "demo_id": 870
+  },
+  {
+    "group_id": 945,
+    "tick": 419344,
+    "killer_name": "dupreeh",
+    "victim_name": "tarik",
+    "weapon_name": "M4A4",
+    "demo_id": 870
   }
 ]
