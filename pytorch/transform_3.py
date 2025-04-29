@@ -1,4 +1,4 @@
-# ✅ transform_3.py（改進版，加上註解）
+# ✅ transform_3_cls_v3.py（正式版，包含 acceptable normal acc + 懲罰機制）
 
 import os
 import pandas as pd
@@ -11,24 +11,32 @@ from torch.utils.data import DataLoader, Dataset
 from sklearn.metrics import precision_score, recall_score, f1_score
 import random
 
-# ========== 超參數 ==========
+# ========== 超參數設定 ========== #
 SEED = 47
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
+# 特徵數量、Transformer架構設定
 input_dim = 6
 hidden_dim = 1024
 num_heads = 8
 num_layers = 4
 batch_size = 64
+
+# 優化器、訓練設定
 learning_rate = 1e-4
 num_epochs = 100
 patience = 10
-lambda_center = 0.001
 
-# ========== 測試集異常率分析 ==========
+# 損失函數設定
+lambda_center = 0.001
+acceptable_normal_acc = 0.80   # 正常玩家正常率最低要求
+penalty_weight = 10            # 正常率不夠時的懲罰加權
+
+# ========== 測試集異常率分析 ========== #
 def test_abnormal_ratio(model, center, threshold, test_csv, device):
+    """在測試集上統計正常玩家與異常玩家的異常判定率"""
     model.eval()
     test_dataset = CustomDataset(test_csv)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
@@ -46,64 +54,86 @@ def test_abnormal_ratio(model, center, threshold, test_csv, device):
     all_preds = torch.cat(all_preds)
     all_labels = torch.cat(all_labels)
 
+    # 正常玩家 vs 非正常玩家分開統計
     normal_mask = all_labels == 1
     abnormal_mask = all_labels == 0
 
-    normal_abnormal_rate = preds[normal_mask].sum().item() / max(normal_mask.sum().item(), 1)
-    abnormal_abnormal_rate = preds[abnormal_mask].sum().item() / max(abnormal_mask.sum().item(), 1)
-    normal_correct_rate = (preds[normal_mask] == 0).sum().item() / max(normal_mask.sum().item(), 1)
+    normal_abnormal_rate = all_preds[normal_mask].sum().item() / max(normal_mask.sum().item(), 1)
+    abnormal_abnormal_rate = all_preds[abnormal_mask].sum().item() / max(abnormal_mask.sum().item(), 1)
+    normal_correct_rate = (all_preds[normal_mask] == 0).sum().item() / max(normal_mask.sum().item(), 1)
 
+    # 顯示結果
     print(f"\n📊 測試集中：")
     print(f"• 正常玩家異常率：{normal_abnormal_rate:.2%}")
     print(f"• 正常玩家正常率：{normal_correct_rate:.2%}")
     print(f"• 其他玩家異常率：{abnormal_abnormal_rate:.2%}")
     print(f"→ 差距：{(abnormal_abnormal_rate - normal_abnormal_rate):.2%}")
-# ========== Attention Pooling 層 ==========
-class AttentionPooling(nn.Module):
-    def __init__(self, hidden_dim):
-        super().__init__()
-        self.attn = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, 1)
-        )
 
-    def forward(self, x):
-        attn_weights = torch.softmax(self.attn(x), dim=1)
-        return (x * attn_weights).sum(dim=1)
-
-# ========== Transformer 特徵萃取器 ==========
+# ========== Transformer 特徵萃取器 (加CLS Token) ========== #
 class TransformerFeatureExtractor(nn.Module):
+    """將輸入序列經過 Transformer 萃取，取 CLS token 作為特徵"""
     def __init__(self, input_dim, num_heads, num_layers, hidden_dim, dropout_rate=0.1):
         super().__init__()
         self.embedding = nn.Linear(input_dim, hidden_dim)
         encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads, dropout=dropout_rate, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.pooling = AttentionPooling(hidden_dim)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_dim))  # 初始化一個學習到的CLS token
 
     def forward(self, x):
         x = self.embedding(x)
+        batch_size = x.size(0)
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)  # CLS放到最前面
         x = self.transformer(x)
-        x = self.pooling(x)
-        return x
+        return x[:, 0, :]  # 取CLS token對應的輸出
 
-# ========== 自適應 Center Loss ==========
+# ========== 自適應 Center Loss（含正常率要求） ========== #
 class AdaptiveCenterLoss(nn.Module):
-    def __init__(self, feature_dim, lambda_center=0.001):
+    def __init__(self, feature_dim, lambda_center=0.001, margin=0.7, penalty_abnormal_weight=30, fixed_threshold=1.0):
         super().__init__()
         self.center = nn.Parameter(torch.randn(feature_dim))
-        self.threshold = nn.Parameter(torch.tensor(1.0))
         self.lambda_center = lambda_center
+        self.margin = margin
+        self.penalty_abnormal_weight = penalty_abnormal_weight
+        self.threshold = fixed_threshold  # 固定 threshold（不是 nn.Parameter）
 
-    def forward(self, features):
+    def forward(self, features, labels):
         dists = torch.norm(features - self.center, dim=1)
-        losses = F.relu(dists - self.threshold) ** 2
-        return losses.mean() + self.lambda_center * self.threshold
+        preds = (dists > self.threshold).float()
 
-# ========== 自訂 Dataset ==========
+        normal_mask = labels == 1
+        abnormal_mask = labels == 0
+        normal_total = normal_mask.sum().item()
+        abnormal_total = abnormal_mask.sum().item()
+
+        # 1. 正常率計算
+        if normal_total > 0:
+            normal_correct = (preds[normal_mask] == 0).sum().item()
+            normal_acc = normal_correct / normal_total
+        else:
+            normal_acc = 1.0
+
+        # 2. 基本 Loss（越過 threshold 的才有懲罰）
+        base_loss = F.relu(dists - self.threshold) ** 2
+        center_loss = base_loss.mean() + self.lambda_center * self.threshold
+
+        # 3. 如果正常率不夠，加懲罰
+        if normal_acc < acceptable_normal_acc:
+            penalty = penalty_weight * (acceptable_normal_acc - normal_acc)
+            center_loss += penalty
+
+        # 4. 如果異常樣本離 center 太近，加重懲罰
+        if abnormal_total > 0:
+            abnormal_close = (dists[abnormal_mask] < (self.threshold - self.margin)).float().mean()
+            center_loss += self.penalty_abnormal_weight * abnormal_close
+
+        return center_loss
+
+
+# ========== 自訂 Dataset 讀取器 ========== #
 class CustomDataset(Dataset):
     def __init__(self, csv_file):
-        df = pd.read_csv(csv_file, dtype=np.float32)  # 強制讀成 float32
+        df = pd.read_csv(csv_file, dtype=np.float32)
         self.features = df.iloc[:, :-1].values.reshape(-1, 64, 6)
         self.labels = df.iloc[:, -1].values
 
@@ -113,7 +143,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         return torch.tensor(self.features[idx], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.float32)
 
-# ========== 驗證 ==========
+# ========== 驗證流程 ========== #
 def validate(model, center, threshold, dataloader, device):
     model.eval()
     all_preds, all_labels = [], []
@@ -146,7 +176,7 @@ def validate(model, center, threshold, dataloader, device):
 
     return precision, recall, f1, normal_accuracy, normal_abnormal_rate, abnormal_abnormal_rate, gap
 
-# ========== 訓練流程 ==========
+# ========== 訓練流程 ========== #
 def train(model, loss_fn, optimizer, train_loader, val_loader, device, num_epochs, early_stopping_patience=10):
     best_f1 = -1
     no_improve_epochs = 0
@@ -155,10 +185,10 @@ def train(model, loss_fn, optimizer, train_loader, val_loader, device, num_epoch
         model.train()
         total_loss = 0
 
-        for X_batch, _ in train_loader:
-            X_batch = X_batch.to(device)
+        for X_batch, y_batch in train_loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             features = model(X_batch)
-            loss = loss_fn(features)
+            loss = loss_fn(features, y_batch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -166,27 +196,16 @@ def train(model, loss_fn, optimizer, train_loader, val_loader, device, num_epoch
 
         avg_loss = total_loss / len(train_loader)
 
-        # ======= 做一次驗證 =======
         precision, recall, f1, normal_accuracy, normal_abnormal_rate, abnormal_abnormal_rate, gap = validate(model, loss_fn.center, loss_fn.threshold, val_loader, device)
 
         print(f"Epoch {epoch+1}, Train Loss: {avg_loss:.4f}")
         print(f"Val Precision: {precision:.4f}, Val Recall: {recall:.4f}, Val F1: {f1:.4f}, Normal Acc: {normal_accuracy:.4f}")
         print(f"• 正常玩家異常率：{normal_abnormal_rate:.2%} | 其他玩家異常率：{abnormal_abnormal_rate:.2%} | 差距：{gap:.2%}")
-        print(f"Threshold: {loss_fn.threshold.item():.4f}")
+        print(f"Threshold: {loss_fn.threshold:.4f}")
 
-        # ======= (新增) 自動調整 threshold =======
-        with torch.no_grad():
-            if normal_abnormal_rate > 0.05:
-                # 如果正常玩家異常率太高 (>5%)，提高 threshold 讓判定更嚴格
-                loss_fn.threshold += 0.01
-            elif normal_abnormal_rate < 0.01:
-                # 如果正常玩家異常率太低 (<1%)，降低 threshold 讓異常容易被抓到
-                loss_fn.threshold -= 0.005
+        # 閥值調整：目標是讓正常玩家異常率保持合理
+        # 閥值調整
 
-            # 限制 threshold 合理範圍
-            loss_fn.threshold.data.clamp_(0.5, 2.0)
-
-        # ======= (原本就有) 保存最佳模型 =======
         if f1 > best_f1:
             best_f1 = f1
             no_improve_epochs = 0
@@ -198,8 +217,7 @@ def train(model, loss_fn, optimizer, train_loader, val_loader, device, num_epoch
                 print(f"🛑 早停：Val F1沒進步{early_stopping_patience}個epoch")
                 break
 
-
-# ========== 主程式 ==========
+# ========== 主程式 ========== #
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -209,26 +227,27 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    test_dataset = CustomDataset("../output/split/test_set.csv")  # 加這行，把測試集讀進來
+    test_dataset = CustomDataset("../output/split/test_set.csv")
 
     print("\n📦 資料量統計")
     print("===================")
     print(f"• 訓練資料總筆數：{len(train_dataset)}")
-    print(f"    - 正常玩家 (label=1)：{(train_dataset.labels == 1).sum()} 筆")
-    print(f"    - 異常玩家 (label=0)：{(train_dataset.labels == 0).sum()} 筆")
     print(f"• 驗證資料總筆數：{len(val_dataset)}")
-    print(f"    - 正常玩家 (label=1)：{(val_dataset.labels == 1).sum()} 筆")
-    print(f"    - 異常玩家 (label=0)：{(val_dataset.labels == 0).sum()} 筆")
     print(f"• 測試資料總筆數：{len(test_dataset)}")
-    print(f"    - 正常玩家 (label=1)：{(test_dataset.labels == 1).sum()} 筆")
-    print(f"    - 異常玩家 (label=0)：{(test_dataset.labels == 0).sum()} 筆")
     print("===================\n")
+
     model = TransformerFeatureExtractor(input_dim, num_heads, num_layers, hidden_dim).to(device)
-    loss_fn = AdaptiveCenterLoss(hidden_dim, lambda_center=lambda_center).to(device)
+    loss_fn = AdaptiveCenterLoss(
+    feature_dim=hidden_dim,
+    lambda_center=lambda_center,
+    margin=0.7,
+    penalty_abnormal_weight=30,
+    fixed_threshold=1.0  # ⭐這裡設定你的固定 threshold 值
+    ).to(device)
+
     optimizer = optim.AdamW(list(model.parameters()) + list(loss_fn.parameters()), lr=learning_rate)
 
     train(model, loss_fn, optimizer, train_loader, val_loader, device, num_epochs=num_epochs, early_stopping_patience=patience)
-
 
     print("\n🧪 開始測試集分析...")
     test_abnormal_ratio(model, loss_fn.center, loss_fn.threshold, "../output/split/test_set.csv", device)

@@ -1,65 +1,87 @@
 import os
-import shutil
 import glob
 import json
 import re
+import subprocess
+from datetime import datetime
 
-demstorage_folder = "demfilter/demstorage"
-reply_folder = "REPLY"
-log_file = "logs/dem_log.json"
+# 資料夾設定
+demstorage_folder = "../../DEM"
+log_dir = "derarlog"
+log_file = os.path.join(log_dir, "demRAR_log.json")
+os.makedirs(log_dir, exist_ok=True)
 
-# 建立資料夾
-os.makedirs(reply_folder, exist_ok=True)
-os.makedirs("logs", exist_ok=True)
-
-# 讀取已處理過的 dem 檔案名稱
+# 載入已處理的 RAR 紀錄
 if os.path.exists(log_file):
     with open(log_file, "r") as f:
-        processed_dems = set(json.load(f))
+        processed_rars = set(json.load(f))
 else:
-    processed_dems = set()
+    processed_rars = set()
 
-# 抓出 REPLY 裡目前最大的 gameN.dem 編號
-existing_files = glob.glob(os.path.join(reply_folder, "game*.dem"))
-existing_indexes = []
+# 持續處理直到沒有未處理的 RAR 為止
+while True:
+    rar_files = sorted(glob.glob(os.path.join(demstorage_folder, "*.rar")))
+    unprocessed_rars = [r for r in rar_files if os.path.basename(r) not in processed_rars]
+    if not unprocessed_rars:
+        break
 
-for filename in existing_files:
-    match = re.search(r"game(\d+)\.dem", filename)
-    if match:
-        existing_indexes.append(int(match.group(1)))
-
-start_index = max(existing_indexes, default=0) + 1
-
-# 所有未處理的 dem 檔案
-all_dem_files = sorted(glob.glob(os.path.join(demstorage_folder, "*.dem")))
-
-copied_count = 0
-
-for dem_file in all_dem_files:
-    dem_filename = os.path.basename(dem_file)
-
-    if dem_filename in processed_dems:
-        print(f"⚠️ {dem_filename} 已處理過，跳過")
-        continue
-
-    new_filename = f"game{start_index}.dem"
-    new_path = os.path.join(reply_folder, new_filename)
+    rar = unprocessed_rars[0]
+    rar_filename = os.path.basename(rar)
+    print(f"\n📦 解壓縮中：{rar}")
 
     try:
-        shutil.copy(dem_file, new_path)
-        print(f"✅ 已將 {dem_filename} 複製為 {new_filename}")
-        processed_dems.add(dem_filename)
-        start_index += 1
-        copied_count += 1
+        seven_zip_path = r"C:\\Program Files\\7-Zip\\7z.exe"
+        result = subprocess.run(
+            [seven_zip_path, "e", "-aoa", rar, f"-o{demstorage_folder}"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        processed_rars.add(rar_filename)
 
-        # 寫入 log
+        # 從 stdout 抓出剛解壓的 .dem 檔案名稱
+        dem_names = re.findall(r'Extracting\\s+(.+?\\.dem)', result.stdout, re.IGNORECASE)
+        for name in dem_names:
+            old_path = os.path.join(demstorage_folder, name)
+
+            if not os.path.exists(old_path):
+                print(f"⚠️ 找不到檔案：{name}，可能尚未寫入完成")
+                continue
+
+            mtime = os.path.getmtime(old_path)
+            timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+            new_name = f"{os.path.splitext(name)[0]}_{timestamp}.dem"
+            new_path = os.path.join(demstorage_folder, new_name)
+
+            if not os.path.exists(new_path):
+                os.rename(old_path, new_path)
+                print(f"📝 檔名已更改為：{new_name}")
+            else:
+                print(f"⚠️ 檔案已存在：{new_name}，略過改名")
+
+        # 🧼 對資料夾中所有未加 timestamp 的 .dem 重新命名
+        for path in glob.glob(os.path.join(demstorage_folder, "*.dem")):
+            filename = os.path.basename(path)
+            if re.search(r'_\d{4}-\d{2}-\d{2}\.dem$', filename):
+                continue  # 已有 timestamp
+
+            mtime = os.path.getmtime(path)
+            timestamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+            name_no_ext = os.path.splitext(filename)[0]
+            new_name = f"{name_no_ext}_{timestamp}.dem"
+            new_path = os.path.join(demstorage_folder, new_name)
+
+            if not os.path.exists(new_path):
+                os.rename(path, new_path)
+                print(f"📝 後補改名為：{new_name}")
+            else:
+                print(f"⚠️ 後補檔案已存在：{new_name}，略過")
+
+        # 每處理一個 RAR，立即更新紀錄
         with open(log_file, "w") as f:
-            json.dump(sorted(processed_dems), f, indent=4)
+            json.dump(sorted(processed_rars), f, indent=4)
 
     except Exception as e:
-        print(f"❌ 複製 {dem_filename} 失敗: {e}")
+        print(f"❌ 無法解壓 {rar}：{e}")
 
-if copied_count == 0:
-    print("⚠️ 沒有新的 DEM 被複製")
-else:
-    print(f"\n🎉 完成！共複製 {copied_count} 個 DEM 檔案")
+print("\n🎉 解壓與紀錄完成！")
