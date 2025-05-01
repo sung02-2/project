@@ -18,7 +18,6 @@ if __name__ == "__main__":
         df.sort_values(by=["GroupID", "Tick"], inplace=True)
 
         # ===== 原始與差分視角特徵 =====
-        df["ViewY_raw"] = df["ViewY"]
         df["DeltaViewX"] = df.groupby("GroupID")["ViewX"].diff().fillna(0)
         df["DeltaViewY"] = df.groupby("GroupID")["ViewY"].diff().fillna(0)
         df["YawVelocity"] = df["DeltaViewX"]
@@ -48,48 +47,13 @@ if __name__ == "__main__":
         # ===== 視角與移動方向夾角 =====
         df["ViewMoveAngleDiff"] = (df["MoveDir"] - df["ViewX"] + 180) % 360 - 180
 
-        # ===== Group 統計特徵 =====
-        summary_list = []
-        for group_id, group_df in df.groupby("GroupID"):
-            delta_viewx = group_df["DeltaViewX"]
-            movedir = group_df["MoveDir"]
-            speed = group_df["Speed"]
-            view_move_diff = group_df["ViewMoveAngleDiff"]
-
-            if len(group_df) >= 2 and delta_viewx.std() != 0 and movedir.std() != 0:
-                corr_viewX_moveAngle = np.corrcoef(delta_viewx, movedir)[0, 1]
-                if np.isnan(corr_viewX_moveAngle): corr_viewX_moveAngle = 0
-            else:
-                corr_viewX_moveAngle = 0
-
-            if len(group_df) >= 2 and delta_viewx.std() != 0 and speed.std() != 0:
-                corr_viewX_speed = np.corrcoef(delta_viewx, speed)[0, 1]
-                if np.isnan(corr_viewX_speed): corr_viewX_speed = 0
-            else:
-                corr_viewX_speed = 0
-
-            turning_speed = speed[delta_viewx.abs() > 2]
-            std_speed_while_turning = turning_speed.std() if len(turning_speed) > 0 else 0
-            avg_angle_diff = view_move_diff.abs().mean()
-
-            summary_list.append({
-                "GroupID": group_id,
-                "corr_viewX_moveAngle": corr_viewX_moveAngle,
-                "corr_viewX_speed": corr_viewX_speed,
-                "std_speed_while_turning": std_speed_while_turning,
-                "avg_angle_diff": avg_angle_diff
-            })
-
-        df_summary = pd.DataFrame(summary_list)
-        df = df.merge(df_summary, on="GroupID", how="left")
-
         # ===== Demo 日期處理 =====
         group_dates = df.groupby("GroupID")["DemoTime"].first().reset_index().rename(columns={"DemoTime": "StartDemoDate"})
         df = df.merge(group_dates, on="GroupID", how="left")
         df["DateOrdinal"] = pd.to_datetime(df["StartDemoDate"]).map(lambda d: d.toordinal())
 
-        # ===== Tick 正規化處理 =====
-        df["NormTick"] = df.groupby("GroupID").cumcount() / 63
+        # ===== Tick 序列位置（從 0 編號，不做正規化） =====
+        df["GroupTickIndex"] = df.groupby("GroupID").cumcount()
 
         # ===== 武器數值化處理 =====
         label_map = {}

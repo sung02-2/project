@@ -8,15 +8,15 @@ from sklearn.metrics import classification_report, accuracy_score, f1_score
 
 # ========== 參數區塊（可調整超參數與檔案路徑） ==========
 INPUT_DIM = 18              # 每個 tick 的特徵維度
-HIDDEN_DIM = 512            # Transformer 的隱藏層維度
-NUM_HEADS = 8               # 多頭注意力的頭數
-NUM_LAYERS = 6              # Transformer 的層數
+HIDDEN_DIM = 256          # Transformer 的隱藏層維度
+NUM_HEADS = 4               # 多頭注意力的頭數
+NUM_LAYERS = 4              # Transformer 的層數
 DROPOUT = 0.1               # dropout 機率
 d_model = HIDDEN_DIM        # d_model 參數
 LEARNING_RATE = 5e-5        # 初始學習率（會動態調整）
 NUM_EPOCHS = 100            # 最多訓練 epoch 數
 BATCH_SIZE = 64             # 每批次樣本數
-PATIENCE = 10               # early stopping 容忍次數
+PATIENCE = 100               # early stopping 容忍次數
 WARMUP_STEPS = 4000         # step-wise warmup 步數（不是 epoch）
 TRAIN_PATH = "../../output/pt/train.pt"      # 訓練資料路徑
 VAL_PATH = "../../output/pt/val.pt"          # 驗證資料路徑
