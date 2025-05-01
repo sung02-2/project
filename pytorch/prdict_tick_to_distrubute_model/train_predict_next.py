@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import classification_report, accuracy_score, f1_score
 
-# ========== 參數區塊（可調整超參數與檔案路徑） ========== 
+# ========== 參數區塊（可調整超參數與檔案路徑） ==========
 INPUT_DIM = 18              # 每個 tick 的特徵維度
 HIDDEN_DIM = 512            # Transformer 的隱藏層維度
 NUM_HEADS = 8               # 多頭注意力的頭數
@@ -167,17 +167,36 @@ def main():
 
             total_loss += loss.item() * src.size(0)
 
-        avg_loss = total_loss / len(train_dataset)
+        avg_train_loss = total_loss / len(train_dataset)
 
         model.eval()
         clf.eval()
+        val_total_loss = 0
+        sigmoid_outputs = []
         with torch.no_grad():
             val_loss_vecs, val_labels = evaluate_tickwise_loss(model, val_dataset, device)
-            preds = clf(val_loss_vecs.to(device)) > 0.5
+            pred_probs = clf(val_loss_vecs.to(device))
+            preds = pred_probs > 0.5
+
+            val_loss = bce_loss(pred_probs, val_labels.float().to(device)).item()
+            sigmoid_outputs.extend(pred_probs.cpu().numpy())
+
             acc = accuracy_score(val_labels.numpy(), preds.cpu().numpy())
             f1 = f1_score(val_labels.numpy(), preds.cpu().numpy())
 
-        print(f"Epoch {epoch+1}, Train Loss: {avg_loss:.6f}, Val ACC: {acc:.4f}, Val F1: {f1:.4f}")
+            num_pred_player = preds.sum().item()
+            num_pred_nonplayer = len(preds) - num_pred_player
+
+        current_lr = scheduler.get_last_lr()[0]
+
+        print(f"Epoch {epoch+1}/{NUM_EPOCHS}")
+        print(f"  - Train Loss: {avg_train_loss:.6f}")
+        print(f"  - Val Loss: {val_loss:.6f}")
+        print(f"  - Val ACC: {acc:.4f}")
+        print(f"  - Val F1: {f1:.4f}")
+        print(f"  - Current LR: {current_lr:.8f}")
+        print(f"  - Sigmoid Avg: {np.mean(sigmoid_outputs):.4f}, Std: {np.std(sigmoid_outputs):.4f}")
+        print(f"  - Predicted Players: {num_pred_player}, Non-Players: {num_pred_nonplayer}\n")
 
         if f1 > best_f1:
             best_f1 = f1
